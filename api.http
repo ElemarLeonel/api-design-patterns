@@ -1,0 +1,110 @@
+### ====================================================================
+### VERSÃO ANTES - SEM PADRÕES DE PROJETO (Porta 3000)
+### ====================================================================
+
+### 1. Listar Produtos Semeados
+GET http://localhost:3000/products HTTP/1.1
+
+###
+
+### 2. Criar Pedido (Completo com Adicionais)
+# Esperado: 
+# - Subtotal dos produtos: R$ 4500 (Notebook) + R$ 300 (2x Mouse Wireless) = R$ 4800
+# - Frete Expresso: R$ 50
+# - Adicionais: Embrulho (R$ 10) + Seguro (R$ 25)
+# - Total Esperado: R$ 4885
+POST http://localhost:3000/orders HTTP/1.1
+Content-Type: application/json
+
+{
+  "customerName": "Maria Souza (Antes)",
+  "items": [
+    { "productId": 1, "quantity": 1 },
+    { "productId": 2, "quantity": 2 }
+  ],
+  "shippingType": "express",
+  "paymentMethod": "pix",
+  "giftWrap": true,
+  "insurance": true
+}
+
+###
+
+### 3. Criar Pedido (Simples)
+POST http://localhost:3000/orders HTTP/1.1
+Content-Type: application/json
+
+{
+  "customerName": "Pedro Pedregoso (Antes)",
+  "items": [
+    { "productId": 3, "quantity": 1 }
+  ],
+  "shippingType": "normal",
+  "paymentMethod": "credit_card",
+  "giftWrap": false,
+  "insurance": false
+}
+
+###
+
+### 4. Refazer Pedido (Clone Manual Sem Padrões)
+# Insira o ID de um pedido recém-criado acima
+POST http://localhost:3000/orders/1/reorder HTTP/1.1
+
+
+
+### ====================================================================
+### VERSÃO DEPOIS - COM PADRÕES DE PROJETO (Porta 3001)
+### ====================================================================
+
+### 1. Listar Produtos Semeados
+GET http://localhost:3001/products HTTP/1.1
+
+###
+
+### 2. Criar Pedido (Completo com Adicionais)
+# Esperado: 
+# - Subtotal: R$ 4800
+# - Frete Expresso (Strategy): R$ 50
+# - Adicionais (Decorator): Embrulho (R$ 10) + Seguro (R$ 25)
+# - Total Esperado: R$ 4885
+# - Método de Pagamento (Factory): PIX
+# - Notificações (Observer): Logs no console para E-mail e SMS
+POST http://localhost:3001/orders HTTP/1.1
+Content-Type: application/json
+
+{
+  "customerName": "Maria Souza (Depois)",
+  "items": [
+    { "productId": 1, "quantity": 1 },
+    { "productId": 2, "quantity": 2 }
+  ],
+  "shippingType": "express",
+  "paymentMethod": "pix",
+  "giftWrap": true,
+  "insurance": true
+}
+
+###
+
+### 3. Criar Pedido com Frete Normal e Sem Opcionais
+POST http://localhost:3001/orders HTTP/1.1
+Content-Type: application/json
+
+{
+  "customerName": "Pedro Pedregoso (Depois)",
+  "items": [
+    { "productId": 3, "quantity": 1 }
+  ],
+  "shippingType": "normal",
+  "paymentMethod": "credit_card",
+  "giftWrap": false,
+  "insurance": false
+}
+
+###
+
+### 4. Refazer Pedido (Reorder via Prototype)
+# Insira o ID de um pedido recém-criado acima
+POST http://localhost:3001/orders/1/reorder HTTP/1.1
+
