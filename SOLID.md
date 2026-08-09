@@ -1,55 +1,89 @@
-# SOLID aplicado na API
+# SOLID na API de pedidos
 
-Este documento explica os cinco principios SOLID e mostra como eles aparecem na versao refatorada da API, localizada em `src/after`.
+Este projeto apresenta duas versões de uma API de pedidos:
 
-SOLID e um conjunto de boas praticas de design orientado a objetos que ajuda a criar codigo mais coeso, extensivel, testavel e menos acoplado. No contexto desta API de pedidos de e-commerce, esses principios aparecem principalmente por meio da separacao entre Controller, Facade, Service, Repository, Strategies, Factories, Observers, Adapters, Bridges, Builders e Decorators.
+- `src/before`: uma implementação concentrada, usada para mostrar os problemas mais comuns.
+- `src/after`: a versão organizada com princípios SOLID e padrões de projeto.
+
+SOLID é um conjunto de cinco princípios para organizar código orientado a objetos. Ele não é uma regra rígida nem torna todo projeto automaticamente melhor. A ideia é facilitar mudanças, testes e manutenção quando a aplicação cresce.
+
+> Em termos simples: SOLID ajuda cada parte do sistema a ter um papel claro e a conversar com as outras por meio de acordos bem definidos.
 
 ---
 
-## S - Single Responsibility Principle
+## S — Single Responsibility Principle (Responsabilidade Única)
 
-**Principio da Responsabilidade Unica:** uma classe deve ter apenas um motivo para mudar.
+### Fundamento
 
-Na versao `before`, o `OrderController` concentra validacao, SQL, calculo de frete, pagamento, persistencia e notificacoes. Isso faz com que qualquer mudanca de regra afete a mesma classe.
+Uma classe deve ter **uma responsabilidade principal** e, por isso, um motivo claro para mudar. Isso não significa que uma classe só pode ter um método; significa que seus métodos devem colaborar para cumprir o mesmo papel.
 
-Na versao `after`, as responsabilidades foram distribuidas:
+### Analogia e comparação
 
-- `src/after/controllers/OrderController.ts`: recebe a requisicao HTTP, valida os dados obrigatorios e envia a resposta.
-- `src/after/facades/CheckoutFacade.ts`: oferece uma entrada simples para o fluxo de checkout.
-- `src/after/services/OrderService.ts`: orquestra a regra de negocio do pedido.
-- `src/after/repositories/SQLiteOrderRepository.ts`: concentra a persistencia no SQLite.
-- `src/after/strategies/*.ts`: calcula o frete.
-- `src/after/factories/*.ts`: cria gateways de pagamento.
-- `src/after/observers/*.ts`: notifica interessados quando o pedido muda.
+Pense em um restaurante. A pessoa do caixa recebe o pedido, a cozinha o prepara e o entregador leva a refeição. Se uma única pessoa fizesse tudo, qualquer alteração — no cardápio, no pagamento ou na entrega — afetaria o mesmo trabalho.
 
-Exemplo aplicado:
+É exatamente a diferença entre as duas versões do projeto:
+
+| Antes (`src/before`) | Depois (`src/after`) |
+| --- | --- |
+| `OrderController` valida dados, executa SQL, calcula frete, processa pagamento e notifica. | Cada parte cuida de uma etapa: Controller, Facade, Service, Repository, Strategy e Observer. |
+| Uma alteração em qualquer regra pode exigir mexer no controller. | Cada regra tende a mudar em seu próprio arquivo. |
+
+### Exemplo no repositório
+
+O controller da versão refatorada recebe a requisição, faz a validação básica e entrega o fluxo à fachada. Ele não sabe como o pedido será salvo ou pago.
+
+Arquivo: `src/after/controllers/OrderController.ts`
 
 ```ts
-export class OrderController {
-  public async createOrder(req: Request, res: Response): Promise<void> {
-    const result = await this.checkoutFacade.processCheckout({
-      customerName, items, shippingType, paymentMethod,
-      giftWrap: giftWrap || false, insurance: insurance || false
-    });
+const result = await this.checkoutFacade.processCheckout({
+  customerName, items, shippingType, paymentMethod,
+  giftWrap: giftWrap || false,
+  insurance: insurance || false
+});
 
-    res.status(201).json(result);
-  }
+res.status(201).json(result);
+```
+
+Já a persistência fica exclusivamente no repositório:
+
+Arquivo: `src/after/repositories/SQLiteOrderRepository.ts`
+
+```ts
+public saveOrderItem(orderId: number, item: {
+  productId: number;
+  quantity: number;
+  price: number;
+}): Promise<void> {
+  // INSERT na tabela order_items
 }
 ```
 
-O controller nao sabe como calcular frete, salvar no banco ou enviar notificacoes. Ele apenas recebe a requisicao e delega o fluxo.
+### Vantagens
+
+- Arquivos menores e mais fáceis de ler.
+- Mudanças isoladas: alterar o banco não exige mudar a regra de frete.
+- Testes mais simples, pois cada parte possui um foco.
+- Menor risco de uma mudança quebrar uma responsabilidade não relacionada.
+
+### Desvantagens e cuidados
+
+- Há mais arquivos e classes para navegar.
+- Separar demais pode gerar classes muito pequenas sem ganho real.
+- É necessário definir bem quem é responsável por cada decisão.
 
 ---
 
-## O - Open/Closed Principle
+## O — Open/Closed Principle (Aberto/Fechado)
 
-**Principio Aberto/Fechado:** o codigo deve estar aberto para extensao, mas fechado para modificacao.
+### Fundamento
 
-A API aplica esse principio principalmente com o Strategy, Decorator, Observer e Factory.
+O código deve estar **aberto para extensão** e **fechado para modificações desnecessárias**. Na prática, novos comportamentos devem poder ser incluídos criando novas implementações, sem reescrever o fluxo estável que já funciona.
 
-### Frete com Strategy
+### Analogia e comparação
 
-O contrato `IShippingStrategy` define apenas o que qualquer frete precisa fazer:
+Uma tomada permite conectar aparelhos diferentes sem reformar a instalação elétrica a cada novo equipamento. A tomada representa o contrato; cada aparelho é uma nova implementação dele.
+
+No projeto, o contrato de frete é a tomada e as classes de frete são os aparelhos:
 
 ```ts
 export interface IShippingStrategy {
@@ -57,137 +91,256 @@ export interface IShippingStrategy {
 }
 ```
 
-As classes `NormalShipping`, `ExpressShipping` e `PickupShipping` implementam esse contrato. Para adicionar um novo tipo de frete, como `DroneShipping`, basta criar uma nova classe que implemente `IShippingStrategy` e registra-la no mapa de estrategias do `OrderService`.
+Arquivo: `src/after/strategies/IShippingStrategy.ts`
 
-O codigo consumidor continua chamando:
+Em vez de um grande `if/else` com todas as regras no controller — como ocorre em `src/before/controllers/OrderController.ts` — a versão refatorada separa os tipos de frete em classes.
+
+### Exemplo no repositório
+
+`NormalShipping` implementa o contrato sem alterar o serviço de pedidos.
+
+Arquivo: `src/after/strategies/NormalShipping.ts`
 
 ```ts
+export class NormalShipping implements IShippingStrategy {
+  public calculate(subtotal: number): number {
+    return subtotal >= 200 ? 0.00 : 15.00;
+  }
+}
+```
+
+Para criar, por exemplo, um frete por drone, a regra poderia nascer em uma nova classe:
+
+```ts
+class DroneShipping implements IShippingStrategy {
+  public calculate(subtotal: number): number {
+    return 35;
+  }
+}
+```
+
+O mesmo conceito aparece nos decorators `GiftWrapDecorator` e `DeliveryInsuranceDecorator`: eles acrescentam recursos ao pedido sem modificar `BaseOrder`.
+
+### Vantagens
+
+- Novas regras são adicionadas com menos risco ao código existente.
+- Regras ficam separadas e mais fáceis de testar.
+- O sistema cresce por composição, e não por cadeias enormes de condicionais.
+
+### Desvantagens e cuidados
+
+- O projeto ganha mais tipos para administrar.
+- Uma extensão precisa ser registrada no ponto de seleção apropriado. Atualmente, por exemplo, `OrderService` mantém o mapa de estratégias de frete.
+- Não vale criar uma abstração para uma regra que jamais deverá variar.
+
+---
+
+## L — Liskov Substitution Principle (Substituição de Liskov)
+
+### Fundamento
+
+Qualquer implementação de um contrato deve poder ocupar o lugar de outra sem surpreender quem a usa. Em outras palavras: se o código espera um `IShippingStrategy`, toda estratégia válida precisa calcular e devolver um valor de frete de maneira compatível.
+
+### Analogia e comparação
+
+Um controle remoto funciona com pilhas de marcas diferentes, desde que todas respeitem o formato e forneçam energia esperada. A marca interna muda; o uso do controle não.
+
+Isso é diferente de apenas “ter o mesmo nome de método”. Uma classe só respeita Liskov se também mantém as expectativas do contrato. Uma estratégia que lançasse erro para todo subtotal, por exemplo, não seria uma substituta útil para as demais.
+
+### Exemplo no repositório
+
+O serviço seleciona uma estratégia e usa somente a operação prevista pelo contrato:
+
+Arquivo: `src/after/services/OrderService.ts`
+
+```ts
+const strategy = this.shippingStrategies[shippingType.toLowerCase()];
+
+if (!strategy) {
+  throw new Error(`Tipo de frete '${shippingType}' não é válido.`);
+}
+
 const shippingCost = strategy.calculate(subtotal);
 ```
 
-Ou seja, o comportamento pode ser estendido sem reescrever a regra principal de calculo.
+`NormalShipping`, `ExpressShipping` e `PickupShipping` podem ser usadas nesse ponto porque todas implementam `IShippingStrategy`.
 
-### Adicionais com Decorator
+O mesmo acontece com pagamento. Tanto `PixGateway` quanto `CreditCardGateway` cumprem o contrato abaixo:
 
-O pedido base fica em `BaseOrder`, enquanto os adicionais ficam em decoradores como:
-
-- `GiftWrapDecorator`
-- `DeliveryInsuranceDecorator`
-
-Isso permite adicionar comportamentos ao pedido sem alterar a classe base.
-
----
-
-## L - Liskov Substitution Principle
-
-**Principio da Substituicao de Liskov:** classes ou implementacoes concretas devem poder substituir seus contratos sem quebrar o sistema.
-
-Na API, esse principio aparece quando o codigo depende de interfaces e usa implementacoes concretas de forma intercambiavel.
-
-Exemplo com pagamento:
+Arquivo: `src/after/factories/IPaymentGateway.ts`
 
 ```ts
 export interface IPaymentGateway {
-  processPayment(amount: number): Promise<{ success: boolean; transactionId: string }>;
+  processPayment(amount: number): Promise<{
+    success: boolean;
+    transactionId: string;
+  }>;
 }
 ```
 
-Tanto `PixGateway` quanto `CreditCardGateway` seguem esse contrato. Para o `OrderService`, nao importa se o pagamento veio por PIX ou cartao; ambos podem ser usados da mesma forma:
+### Vantagens
 
-```ts
-const paymentGateway = PaymentGatewayFactory.createGateway(paymentMethod);
-const paymentResult = await paymentGateway.processPayment(finalTotalPrice);
-```
+- É possível trocar implementações sem alterar o código consumidor.
+- Reduz condicionais baseadas em classes concretas.
+- Contratos tornam o comportamento esperado mais explícito.
 
-O mesmo raciocinio vale para fretes:
+### Desvantagens e cuidados
 
-- `NormalShipping`
-- `ExpressShipping`
-- `PickupShipping`
-
-Todas essas classes podem substituir `IShippingStrategy` sem alterar o codigo que calcula o frete.
+- Uma interface, sozinha, não garante substituição correta; as implementações precisam cumprir o combinado.
+- Contratos vagos ou retornos inconsistentes podem causar falhas difíceis de perceber.
+- Testes de contrato são úteis quando há várias implementações.
 
 ---
 
-## I - Interface Segregation Principle
+## I — Interface Segregation Principle (Segregação de Interfaces)
 
-**Principio da Segregacao de Interfaces:** uma classe nao deve ser obrigada a depender de metodos que nao usa.
+### Fundamento
 
-A API evita interfaces grandes e genericas. Em vez disso, usa contratos pequenos e focados:
+Uma classe não deve ser forçada a depender de métodos que não utiliza. Em vez de uma “superinterface” para tudo, é melhor ter contratos pequenos e focados.
 
-- `IShippingStrategy`: apenas `calculate`.
-- `IPaymentGateway`: apenas `processPayment`.
-- `ITrackingService`: apenas a operacao de rastreio necessaria.
-- `IOrderObserver`: apenas o metodo exigido para reagir a eventos de pedido.
-- `ICommand`: apenas o metodo de execucao do comando.
+### Analogia e comparação
 
-Exemplo:
+Um canivete tem muitas ferramentas, mas alguém que precisa somente de uma chave de fenda prefere usar uma chave de fenda simples. Uma interface grande obriga implementações a carregar ferramentas que não precisam.
+
+Compare os contratos do projeto com uma interface genérica como esta:
 
 ```ts
-export interface IPaymentGateway {
-  processPayment(amount: number): Promise<{ success: boolean; transactionId: string }>;
+// Exemplo a evitar: mistura responsabilidades sem relação.
+interface SistemaDePedidos {
+  calculateShipping(): number;
+  processPayment(): Promise<void>;
+  sendNotification(): Promise<void>;
+  saveOrder(): Promise<void>;
 }
 ```
 
-Um gateway de pagamento nao precisa implementar metodos de frete, notificacao ou persistencia. Ele depende somente do contrato necessario para sua responsabilidade.
+Um gateway de pagamento teria de conhecer frete, notificação e banco, embora não faça nada disso.
 
-Um ponto de atencao e `IOrderRepository`, que agrupa busca de produto, salvamento de pedido e salvamento de item. Para esta API didatica, isso e aceitavel. Em uma API maior, poderia ser dividido em contratos menores, como `IProductRepository` e `IOrderWriterRepository`, caso diferentes servicos passassem a usar apenas parte dessas operacoes.
+### Exemplo no repositório
+
+O contrato de rastreio contém apenas o que o serviço precisa para despachar o rastreio:
+
+Arquivo: `src/after/adapters/ITrackingService.ts`
+
+```ts
+export interface ITrackingService {
+  dispatchTracking(orderId: number, customerName: string): Promise<void>;
+}
+```
+
+Outros exemplos igualmente focados são:
+
+- `IShippingStrategy`: calcula frete;
+- `IPaymentGateway`: processa pagamento;
+- `IOrderObserver`: reage a mudanças do pedido;
+- `INotificationProvider`: envia uma mensagem.
+
+### Vantagens
+
+- Implementações dependem somente do necessário.
+- Mocks e testes ficam mais curtos.
+- Mudanças em uma capacidade afetam menos classes.
+
+### Desvantagens e cuidados
+
+- Muitos contratos pequenos podem dificultar a descoberta do que existe no projeto.
+- Interfaces devem representar necessidades reais dos consumidores, não ser divididas apenas por estética.
+- `IOrderRepository` ainda reúne consulta de produto e gravação de pedidos. Para a proposta didática atual isso é aceitável; se consumidores distintos usarem apenas uma parte dele, pode fazer sentido separar, por exemplo, `IProductRepository` e `IOrderWriterRepository`.
 
 ---
 
-## D - Dependency Inversion Principle
+## D — Dependency Inversion Principle (Inversão de Dependência)
 
-**Principio da Inversao de Dependencia:** modulos de alto nivel nao devem depender diretamente de detalhes de baixo nivel. Ambos devem depender de abstracoes.
+### Fundamento
 
-O melhor exemplo esta no `OrderService`, que recebe um `IOrderRepository` no construtor:
+Partes que contém regras importantes do sistema não devem depender diretamente de detalhes técnicos, como SQLite, uma API específica ou uma biblioteca. Tanto a regra quanto o detalhe devem depender de uma abstração.
+
+### Analogia e comparação
+
+Um aparelho ligado à tomada não precisa saber qual usina gerou a energia. Ele depende de um padrão de fornecimento; a usina é um detalhe substituível.
+
+Sem esse princípio, `OrderService` criaria e usaria diretamente `SQLiteOrderRepository`. Assim, trocar SQLite por PostgreSQL obrigaria a modificar a regra de negócio. Com a inversão, o serviço conhece apenas o acordo de persistência.
+
+### Exemplo no repositório
+
+O serviço recebe uma abstração no construtor:
+
+Arquivo: `src/after/services/OrderService.ts`
 
 ```ts
-constructor(orderRepository: IOrderRepository) {
-  this.orderRepository = orderRepository;
+export class OrderService {
+  private orderRepository: IOrderRepository;
+
+  constructor(orderRepository: IOrderRepository) {
+    this.orderRepository = orderRepository;
+  }
 }
 ```
 
-Isso significa que o servico de pedidos nao precisa saber se os dados estao em SQLite, PostgreSQL, MongoDB ou em memoria para testes. Ele conhece apenas o contrato:
+O acordo é definido separadamente:
+
+Arquivo: `src/after/repositories/IOrderRepository.ts`
 
 ```ts
 export interface IOrderRepository {
   findProductById(id: number): Promise<any>;
-  saveOrder(order: {...}): Promise<number>;
-  saveOrderItem(orderId: number, item: {...}): Promise<void>;
+  saveOrder(order: /* dados do pedido */): Promise<number>;
+  saveOrderItem(orderId: number, item: /* dados do item */): Promise<void>;
 }
 ```
 
-A implementacao concreta fica separada:
+E o detalhe técnico implementa esse acordo:
+
+Arquivo: `src/after/repositories/SQLiteOrderRepository.ts`
 
 ```ts
 export class SQLiteOrderRepository implements IOrderRepository {
-  // detalhes de SQL e sqlite3
+  public findProductById(id: number): Promise<any> {
+    // consulta SQLite
+  }
 }
 ```
 
-Assim, o fluxo principal depende da abstracao `IOrderRepository`, enquanto o detalhe tecnico fica isolado em `SQLiteOrderRepository`.
+Essa mesma direção aparece em `ITrackingService`, `IPaymentGateway`, `IShippingStrategy` e `INotificationProvider`.
 
-Tambem ha exemplos desse principio em:
+### Vantagens
 
-- `IShippingStrategy`: o builder recebe uma estrategia, nao uma classe fixa de frete.
-- `IPaymentGateway`: o service processa pagamentos por meio de um contrato.
-- `ITrackingService`: o service usa uma interface de rastreio, enquanto o adapter esconde a API legada.
-- `INotificationProvider`: os canais de notificacao dependem de um provedor abstrato.
+- Trocar infraestrutura é mais simples e localizado.
+- A regra de negócio pode ser testada com repositórios em memória ou falsos.
+- Menos acoplamento a banco de dados, fornecedores e bibliotecas.
 
----
+### Desvantagens e cuidados
 
-## Resumo dos principios na API
-
-| Principio | Aplicacao na API |
-| --- | --- |
-| SRP | Controller, Service, Repository, Strategy, Factory e Observer possuem responsabilidades separadas. |
-| OCP | Novos fretes, pagamentos, notificacoes e adicionais podem ser adicionados por novas classes. |
-| LSP | Implementacoes como `PixGateway`, `CreditCardGateway` e estrategias de frete substituem seus contratos sem quebrar o fluxo. |
-| ISP | Interfaces pequenas evitam que classes implementem metodos desnecessarios. |
-| DIP | `OrderService` depende de abstracoes como `IOrderRepository`, `IShippingStrategy`, `IPaymentGateway` e `ITrackingService`. |
+- Exige criar e manter abstrações.
+- Uma abstração ruim pode esconder detalhes importantes ou ficar difícil de entender.
+- O projeto ainda instancia `SQLiteOrderRepository` dentro de `CheckoutFacade`; para uma aplicação maior, um contêiner de injeção de dependência ou uma camada de composição deixaria essa escolha ainda mais externa.
 
 ---
 
-## Conclusao
+## Como os princípios trabalham juntos
 
-A versao `src/after` demonstra SOLID na pratica porque distribui responsabilidades, reduz acoplamento e permite evoluir a API por extensao. Os padroes de projeto usados no projeto nao existem isoladamente: eles ajudam a concretizar os principios SOLID dentro de um fluxo real de criacao, pagamento, persistencia e notificacao de pedidos.
+O fluxo abaixo resume a colaboração entre as partes:
+
+```text
+Requisição HTTP
+  → OrderController (entrada HTTP — SRP)
+  → CheckoutFacade (simplifica o fluxo — SRP)
+  → OrderService (regra de negócio)
+      → IOrderRepository → SQLiteOrderRepository (DIP)
+      → IShippingStrategy → Normal/Express/Pickup (OCP e LSP)
+      → IPaymentGateway → Pix/CreditCard (ISP, DIP e LSP)
+```
+
+SOLID não exige o uso de todos os padrões de projeto presentes no repositório, mas eles ajudam a colocar os princípios em prática. Por exemplo, Strategy apoia OCP e LSP; Repository apoia SRP e DIP; Adapter e Bridge evitam que detalhes de integrações vazem para a regra de negócio.
+
+## Resumo
+
+| Princípio | Pergunta prática | Exemplo principal |
+| --- | --- | --- |
+| **S — SRP** | Esta classe tem um papel claro? | `OrderController`, `OrderService` e `SQLiteOrderRepository` separados. |
+| **O — OCP** | Posso adicionar uma regra sem reescrever o fluxo estável? | Novas estratégias de frete e decorators. |
+| **L — LSP** | Posso trocar uma implementação por outra sem quebrar o uso? | `PixGateway`/`CreditCardGateway` e estratégias de frete. |
+| **I — ISP** | Esta interface contém somente o que seu consumidor usa? | `ITrackingService`, `IOrderObserver` e `IPaymentGateway`. |
+| **D — DIP** | A regra depende de um contrato, e não de um detalhe técnico? | `OrderService` recebe `IOrderRepository`. |
+
+O objetivo final não é “usar SOLID por usar”. É fazer com que uma mudança, como adicionar um novo frete ou substituir o banco, tenha um lugar previsível para acontecer e afete o menor número possível de partes da API.
